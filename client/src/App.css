@@ -1,0 +1,444 @@
+/* client/src/App.css */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Rajdhani:wght@600;700;800&display=swap');
+
+:root {
+  --bg-obsidian: #060911;
+  --bg-panel: rgba(15, 23, 42, 0.82);
+  --bg-card: rgba(30, 41, 59, 0.65);
+  --border-subtle: rgba(148, 163, 184, 0.15);
+  --accent-gold: #f59e0b;
+  --accent-cyan: #06b6d4;
+  --accent-emerald: #10b981;
+  --accent-crimson: #f43f5e;
+  --text-main: #f8fafc;
+  --text-muted: #94a3b8;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--bg-obsidian);
+  color: var(--text-main);
+  font-family: 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Transparent background when loaded inside OBS Studio Browser Source */
+body.obs-overlay-mode {
+  background-color: transparent !important;
+  background-image: none !important;
+  overflow: hidden;
+}
+
+.esports-app {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 15% 15%, rgba(245, 158, 11, 0.08), transparent 35%),
+    radial-gradient(circle at 85% 80%, rgba(6, 182, 212, 0.08), transparent 40%),
+    linear-gradient(180deg, #060911 0%, #0b1120 100%);
+  padding: 24px;
+}
+
+.esports-container {
+  max-width: 1320px;
+  margin: 0 auto;
+}
+
+/* Tactical Broadcast Typography */
+.tactical-title {
+  font-family: 'Rajdhani', sans-serif;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+/* Top Broadcast Navbar */
+.broadcast-header {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  border-left: 4px solid var(--accent-gold);
+  border-radius: 10px;
+  padding: 18px 24px;
+  margin-bottom: 24px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+}
+
+.live-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(244, 63, 94, 0.15);
+  border: 1px solid rgba(244, 63, 94, 0.4);
+  color: #fda4af;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: 1.5px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  text-transform: uppercase;
+}
+
+.live-dot {
+  width: 8px;
+  height: 8px;
+  background-color: var(--accent-crimson);
+  border-radius: 50%;
+  box-shadow: 0 0 10px var(--accent-crimson);
+  animation: pulse 1.5s infinite;
+}
+
+@keyframes pulse {
+
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  50% {
+    transform: scale(1.35);
+    opacity: 0.55;
+  }
+}
+
+/* KPI Stat Strip */
+.stats-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--bg-panel);
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  padding: 14px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+.stat-value {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--text-main);
+}
+
+/* Action Buttons & Inputs */
+.tactical-btn {
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 700;
+  font-size: 14px;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  padding: 10px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+  background: rgba(30, 41, 59, 0.9);
+  color: var(--text-main);
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.tactical-btn:hover {
+  border-color: var(--accent-cyan);
+  box-shadow: 0 0 14px rgba(6, 182, 212, 0.25);
+}
+
+.tactical-btn.gold {
+  background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+  color: #000;
+  border: none;
+}
+
+.tactical-btn.cyan {
+  background: rgba(6, 182, 212, 0.15);
+  border-color: var(--accent-cyan);
+  color: #67e8f9;
+}
+
+.tactical-input {
+  background: rgba(9, 13, 22, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  color: var(--text-main);
+  padding: 12px 14px;
+  border-radius: 6px;
+  font-size: 14px;
+  outline: none;
+  transition: border 0.2s;
+}
+
+.tactical-input:focus {
+  border-color: var(--accent-gold);
+  box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.15);
+}
+
+/* Main Dashboard Grid */
+.dashboard-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 1fr;
+  gap: 24px;
+}
+
+@media (max-width: 1024px) {
+  .dashboard-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.panel-box {
+  background: var(--bg-panel);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  padding: 22px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35);
+}
+
+/* 20-Slot Tactical Grid */
+.slots-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(135px, 1fr));
+  gap: 12px;
+}
+
+.slot-card {
+  position: relative;
+  padding: 14px 12px;
+  border-radius: 8px;
+  text-align: left;
+  transition: all 0.2s ease;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  min-height: 82px;
+}
+
+.slot-card.open {
+  background: linear-gradient(145deg, rgba(16, 185, 129, 0.12), rgba(6, 78, 59, 0.25));
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  cursor: pointer;
+}
+
+.slot-card.open:hover {
+  transform: translateY(-2px);
+  border-color: var(--accent-emerald);
+  box-shadow: 0 6px 18px rgba(16, 185, 129, 0.22);
+}
+
+.slot-card.locked {
+  background: linear-gradient(145deg, rgba(244, 63, 94, 0.12), rgba(76, 5, 25, 0.35));
+  border: 1px solid rgba(244, 63, 94, 0.35);
+  cursor: not-allowed;
+}
+
+.slot-num {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  text-transform: uppercase;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.slot-team {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 17px;
+  font-weight: 700;
+  margin-top: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.slot-captain {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Broadcast Leaderboard Table */
+.standings-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0 6px;
+}
+
+.standings-table th {
+  font-family: 'Rajdhani', sans-serif;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1.2px;
+  color: var(--text-muted);
+  padding: 6px 10px;
+  text-align: left;
+}
+
+.standings-row {
+  background: rgba(30, 41, 59, 0.6);
+  transition: transform 0.15s ease;
+}
+
+.standings-row td {
+  padding: 10px 10px;
+  font-size: 14px;
+}
+
+.standings-row td:first-child {
+  border-top-left-radius: 6px;
+  border-bottom-left-radius: 6px;
+}
+
+.standings-row td:last-child {
+  border-top-right-radius: 6px;
+  border-bottom-right-radius: 6px;
+}
+
+/* Podium Rank Highlights */
+.standings-row.rank-1 {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.25) 0%, rgba(30, 41, 59, 0.7) 100%);
+  border-left: 3px solid #f59e0b;
+}
+
+.standings-row.rank-2 {
+  background: linear-gradient(90deg, rgba(226, 232, 240, 0.18) 0%, rgba(30, 41, 59, 0.7) 100%);
+}
+
+.standings-row.rank-3 {
+  background: linear-gradient(90deg, rgba(217, 119, 6, 0.18) 0%, rgba(30, 41, 59, 0.7) 100%);
+}
+
+.rank-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 4px;
+  font-family: 'Rajdhani', sans-serif;
+  font-weight: 800;
+  font-size: 14px;
+  background: rgba(15, 23, 42, 0.8);
+}
+
+.rank-1 .rank-pill {
+  background: #f59e0b;
+  color: #000;
+}
+
+.rank-2 .rank-pill {
+  background: #cbd5e1;
+  color: #000;
+}
+
+.rank-3 .rank-pill {
+  background: #b45309;
+  color: #fff;
+}
+
+/* Quick +/- Stepper Buttons for Admin */
+.stepper-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(9, 13, 22, 0.75);
+  padding: 3px 6px;
+  border-radius: 6px;
+  border: 1px solid var(--border-subtle);
+}
+
+.stepper-btn {
+  background: rgba(51, 65, 85, 0.8);
+  border: none;
+  color: #fff;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 700;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.stepper-btn:hover {
+  background: var(--accent-gold);
+  color: #000;
+}
+
+/* =====================================================
+   OBS STREAM OVERLAY HUD WIDGET (?mode=overlay)
+   ===================================================== */
+.obs-hud-wrapper {
+  width: 410px;
+  padding: 16px;
+  font-family: 'Rajdhani', sans-serif;
+}
+
+.obs-hud-header {
+  background: linear-gradient(90deg, #0f172a 0%, #1e293b 100%);
+  border-left: 5px solid var(--accent-gold);
+  border-top: 1px solid rgba(255, 255, 255, 0.12);
+  border-right: 1px solid rgba(255, 255, 255, 0.12);
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.65);
+}
+
+.obs-hud-columns {
+  display: grid;
+  grid-template-columns: 36px 1fr 54px 54px 54px;
+  background: rgba(245, 158, 11, 0.95);
+  color: #000;
+  font-weight: 800;
+  font-size: 12px;
+  letter-spacing: 1px;
+  padding: 4px 10px;
+  text-transform: uppercase;
+}
+
+.obs-hud-row {
+  display: grid;
+  grid-template-columns: 36px 1fr 54px 54px 54px;
+  align-items: center;
+  background: rgba(9, 13, 22, 0.86);
+  backdrop-filter: blur(8px);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 7px 10px;
+  color: #fff;
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.obs-hud-row.top-1 {
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.35), rgba(9, 13, 22, 0.92));
+  border-left: 3px solid var(--accent-gold);
+}
