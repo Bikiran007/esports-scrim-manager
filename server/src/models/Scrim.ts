@@ -15,6 +15,7 @@ export interface ILeaderboardEntry {
   kills: number;
   placementPoints: number;
   totalPoints: number;
+  playersAlive: number;
 }
 
 export interface IScrim extends Document {
@@ -40,6 +41,7 @@ const LeaderboardSchema = new Schema<ILeaderboardEntry>({
   kills: { type: Number, default: 0 },
   placementPoints: { type: Number, default: 0 },
   totalPoints: { type: Number, default: 0 },
+  playersAlive: { type: Number, default: 4, min: 0, max: 4 },
 });
 
 const ScrimSchema = new Schema<IScrim>(

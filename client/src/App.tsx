@@ -20,6 +20,7 @@ interface ILeaderboardEntry {
   kills: number;
   placementPoints: number;
   totalPoints: number;
+  playersAlive: number;
 }
 
 interface IScrim {
@@ -39,9 +40,10 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedOverlay, setCopiedOverlay] = useState(false);
 
-  // New Scrim Modal/Bar states for Admin
+  // Admin New Lobby & Bulk Team Import states
   const [newLobbyTitle, setNewLobbyTitle] = useState('');
   const [newLobbyMap, setNewLobbyMap] = useState<'Erangel' | 'Miramar' | 'Sanhok' | 'Vikendi'>('Erangel');
+  const [bulkTeamsInput, setBulkTeamsInput] = useState('');
 
   // Check if URL has ?mode=overlay for OBS Studio Browser Source
   const [isOverlayMode, setIsOverlayMode] = useState(() => {
@@ -74,7 +76,7 @@ export default function App() {
 
         setScrim(activeScrim);
         socket.emit('join_scrim_room', activeScrim._id);
-      } catch (err) {
+      } catch {
         setErrorMsg('Cannot reach backend server on port 5000.');
       }
     };
@@ -83,14 +85,12 @@ export default function App() {
   }, []);
 
   // Listen for real-time WebSocket broadcasts
-  // Listen for real-time WebSocket broadcasts
   useEffect(() => {
     socket.on('scrim_state_updated', (updatedScrim: IScrim) => {
       setScrim(updatedScrim);
       setErrorMsg(null);
     });
 
-    // Automatically switch all tabs & OBS Overlay when Admin launches a new lobby
     socket.on('scrim_created', (newScrim: IScrim) => {
       setScrim(newScrim);
       socket.emit('join_scrim_room', newScrim._id);
@@ -108,6 +108,7 @@ export default function App() {
     };
   }, []);
 
+  // Manual Single-Slot Booking
   const handleBookSlot = (slotNumber: number) => {
     if (!scrim) return;
     if (!teamName.trim() || !captainIgn.trim()) {
@@ -123,20 +124,57 @@ export default function App() {
     });
   };
 
+  // Bulk Team List Parser & Importer
+  const handleBulkImport = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!scrim || !bulkTeamsInput.trim()) return;
+
+    // Split by newline or comma, clean up "1.", "Slot 2 -", etc.
+    const rawLines = bulkTeamsInput
+      .split(/\r?\n|,/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    const parsedTeams = rawLines
+      .map((line) => {
+        // Remove prefixes like "1.", "01)", "Slot 3:", "Slot #4 -"
+        const cleaned = line.replace(/^(?:slot\s*#?\s*)?\d+[\.\)\:\-\s]+/i, '').trim();
+        // Check if user included captain name via "TeamName - Captain" or "TeamName | Captain"
+        const parts = cleaned.split(/\s+[\-\|]\s+/);
+        return {
+          teamName: parts[0]?.trim() || '',
+          captainIgn: parts[1]?.trim() || 'Roster Verified',
+        };
+      })
+      .filter((t) => t.teamName.length > 0);
+
+    if (parsedTeams.length === 0) {
+      setErrorMsg('No valid team names found in your list.');
+      return;
+    }
+
+    socket.emit('admin_bulk_import_teams', {
+      scrimId: scrim._id,
+      teams: parsedTeams,
+    });
+
+    setBulkTeamsInput('');
+  };
+
+  // Update Kills, Placement Points, or Players Alive (0-4)
   const handleScoreUpdate = (
     slotNumber: number,
     kills: number,
-    placementPoints: number
+    placementPoints: number,
+    playersAlive: number
   ) => {
     if (!scrim) return;
-    const safeKills = Math.max(0, kills);
-    const safePlace = Math.max(0, placementPoints);
-
     socket.emit('admin_update_score', {
       scrimId: scrim._id,
       slotNumber,
-      kills: safeKills,
-      placementPoints: safePlace,
+      kills: Math.max(0, kills),
+      placementPoints: Math.max(0, placementPoints),
+      playersAlive: Math.max(0, Math.min(4, playersAlive)),
     });
   };
 
@@ -157,7 +195,6 @@ export default function App() {
       socket.emit('join_scrim_room', created.data._id);
       setNewLobbyTitle('');
     } catch (err: any) {
-      console.error(err);
       setErrorMsg(
         err?.response?.data?.message ||
           'Failed to create new lobby. Check if the backend server on port 5000 is running.'
@@ -172,6 +209,26 @@ export default function App() {
     setTimeout(() => setCopiedOverlay(false), 2500);
   };
 
+  // Helper to render the 4-bar visual squad status
+  const renderAliveBars = (aliveCount: number = 4) => {
+    if (aliveCount === 0) {
+      return <span className="wiped-badge">WIPED</span>;
+    }
+    return (
+      <div className="alive-bars" title={`${aliveCount} Players Alive`}>
+        {[1, 2, 3, 4].map((barIdx) => {
+          const isAlive = barIdx <= aliveCount;
+          const barClass = isAlive
+            ? aliveCount === 1
+              ? 'alive-bar last-man'
+              : 'alive-bar active'
+            : 'alive-bar';
+          return <span key={barIdx} className={barClass} />;
+        })}
+      </div>
+    );
+  };
+
   if (!scrim) {
     return (
       <div style={{ padding: 40, color: '#f8fafc', fontFamily: 'Rajdhani, sans-serif', fontSize: 22 }}>
@@ -180,14 +237,20 @@ export default function App() {
     );
   }
 
-  // Sort standings highest to lowest by Total Points, then Finishes (tie-breaker)
+  // Sort standings highest to lowest by Total Points, then Finishes
   const sortedLeaderboard = [...scrim.leaderboard].sort(
     (a, b) => b.totalPoints - a.totalPoints || b.kills - a.kills
   );
 
   const bookedCount = scrim.slots.filter((s) => s.isBooked).length;
   const totalLobbyFinishes = scrim.leaderboard.reduce((acc, curr) => acc + curr.kills, 0);
-  const topLeader = sortedLeaderboard[0]?.teamName || 'TBD';
+  const totalPlayersAlive = scrim.leaderboard.reduce(
+    (acc, curr) => acc + (curr.playersAlive ?? 4),
+    0
+  );
+  const squadsAliveCount = scrim.leaderboard.filter(
+    (curr) => (curr.playersAlive ?? 4) > 0
+  ).length;
 
   // =========================================================================
   // VIEW 1: TRANSPARENT OBS STUDIO STREAM OVERLAY (?mode=overlay)
@@ -195,7 +258,6 @@ export default function App() {
   if (isOverlayMode) {
     return (
       <div className="obs-hud-wrapper">
-        {/* Exit preview button (only visible on hover if testing in browser) */}
         {!window.location.search.includes('mode=overlay') && (
           <button
             onClick={() => setIsOverlayMode(false)}
@@ -209,7 +271,7 @@ export default function App() {
         <div className="obs-hud-header">
           <div>
             <div style={{ fontSize: 11, color: '#f59e0b', letterSpacing: 1.5, fontWeight: 700 }}>
-              LIVE STANDINGS • {scrim.map.toUpperCase()}
+              {scrim.map.toUpperCase()} • {squadsAliveCount} SQUADS / {totalPlayersAlive} ALIVE
             </div>
             <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: 0.8 }}>
               {scrim.title}
@@ -224,6 +286,7 @@ export default function App() {
         <div className="obs-hud-columns">
           <span>#</span>
           <span>SQUAD</span>
+          <span style={{ textAlign: 'center' }}>ALIVE</span>
           <span style={{ textAlign: 'center' }}>FIN</span>
           <span style={{ textAlign: 'center' }}>PLC</span>
           <span style={{ textAlign: 'right' }}>PTS</span>
@@ -234,28 +297,36 @@ export default function App() {
             WAITING FOR SQUADS TO LOCK SLOTS...
           </div>
         ) : (
-          sortedLeaderboard.slice(0, 16).map((entry, idx) => (
-            <div
-              key={entry.slotNumber}
-              className={`obs-hud-row ${idx === 0 ? 'top-1' : ''}`}
-            >
-              <span style={{ color: idx === 0 ? '#f59e0b' : '#94a3b8' }}>
-                #{idx + 1}
-              </span>
-              <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                {entry.teamName}
-              </span>
-              <span style={{ textAlign: 'center', color: '#cbd5e1' }}>
-                {entry.kills}
-              </span>
-              <span style={{ textAlign: 'center', color: '#cbd5e1' }}>
-                {entry.placementPoints}
-              </span>
-              <span style={{ textAlign: 'right', color: '#38bdf8', fontWeight: 800 }}>
-                {entry.totalPoints}
-              </span>
-            </div>
-          ))
+          sortedLeaderboard.slice(0, 20).map((entry, idx) => {
+            const alive = entry.playersAlive ?? 4;
+            return (
+              <div
+                key={entry.slotNumber}
+                className={`obs-hud-row ${idx === 0 ? 'top-1' : ''} ${
+                  alive === 0 ? 'squad-wiped' : ''
+                }`}
+              >
+                <span style={{ color: idx === 0 ? '#f59e0b' : '#94a3b8' }}>
+                  #{idx + 1}
+                </span>
+                <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                  {entry.teamName}
+                </span>
+                <span style={{ display: 'flex', justifyContent: 'center' }}>
+                  {renderAliveBars(alive)}
+                </span>
+                <span style={{ textAlign: 'center', color: '#cbd5e1' }}>
+                  {entry.kills}
+                </span>
+                <span style={{ textAlign: 'center', color: '#cbd5e1' }}>
+                  {entry.placementPoints}
+                </span>
+                <span style={{ textAlign: 'right', color: '#38bdf8', fontWeight: 800 }}>
+                  {entry.totalPoints}
+                </span>
+              </div>
+            );
+          })
         )}
       </div>
     );
@@ -317,13 +388,14 @@ export default function App() {
             <span className="stat-label">Lobby Capacity</span>
             <span className="stat-value">
               {bookedCount} / {scrim.slots.length}{' '}
-              <span style={{ fontSize: 14, color: '#10b981' }}>SQUADS LOCKED</span>
+              <span style={{ fontSize: 14, color: '#10b981' }}>LOCKED</span>
             </span>
           </div>
           <div className="stat-card">
-            <span className="stat-label">Current Table Leader</span>
-            <span className="stat-value" style={{ color: '#f59e0b' }}>
-              {topLeader}
+            <span className="stat-label">Squads / Players Alive</span>
+            <span className="stat-value" style={{ color: '#10b981' }}>
+              {squadsAliveCount} SQUADS{' '}
+              <span style={{ fontSize: 15, color: '#94a3b8' }}>({totalPlayersAlive} ALIVE)</span>
             </span>
           </div>
           <div className="stat-card">
@@ -333,57 +405,98 @@ export default function App() {
             </span>
           </div>
           <div className="stat-card">
-            <span className="stat-label">OBS Broadcast Sync</span>
-            <span className="stat-value" style={{ color: '#10b981', fontSize: 20 }}>
-              CONNECTED (&lt;50ms)
+            <span className="stat-label">Current Table Leader</span>
+            <span className="stat-value" style={{ color: '#f59e0b' }}>
+              {sortedLeaderboard[0]?.teamName || 'TBD'}
             </span>
           </div>
         </section>
 
-        {/* Optional Admin New Lobby Creator */}
+        {/* ADMIN CONTROLS: 1. New Lobby Creator + 2. Bulk Team Importer */}
         {isAdmin && (
-          <form
-            onSubmit={handleCreateNewLobby}
-            className="panel-box"
-            style={{
-              marginBottom: 24,
-              display: 'flex',
-              flexWrap: 'wrap',
-              gap: 12,
-              alignItems: 'center',
-              borderColor: 'rgba(245, 158, 11, 0.4)',
-            }}
-          >
-            <span className="tactical-title" style={{ color: '#f59e0b', fontSize: 16 }}>
-              CREATE NEW MATCH LOBBY:
-            </span>
-            <input
-              type="text"
-              placeholder="e.g., Grand Finals - Match 2"
-              value={newLobbyTitle}
-              onChange={(e) => setNewLobbyTitle(e.target.value)}
-              className="tactical-input"
-              style={{ flex: 1, minWidth: 220 }}
-            />
-            <select
-              value={newLobbyMap}
-              onChange={(e) =>
-                setNewLobbyMap(e.target.value as 'Erangel' | 'Miramar' | 'Sanhok' | 'Vikendi')
-              }
-              className="tactical-input"
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
+            {/* Create Fresh Lobby */}
+            <form
+              onSubmit={handleCreateNewLobby}
+              className="panel-box"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 12,
+                borderColor: 'rgba(245, 158, 11, 0.4)',
+              }}
             >
-              <option value="Erangel">Erangel</option>
-              <option value="Miramar">Miramar</option>
-              <option value="Sanhok">Sanhok</option>
-              <option value="Vikendi">Vikendi</option>
-            </select>
-            <button type="submit" className="tactical-btn gold">
-              Launch Fresh 20-Slot Lobby
-            </button>
-          </form>
+              <div className="tactical-title" style={{ color: '#f59e0b', fontSize: 16 }}>
+                1. LAUNCH NEW MATCH LOBBY
+              </div>
+              <div style={{ display: 'flex', gap: 10 }}>
+                <input
+                  type="text"
+                  placeholder="Lobby Title (optional)"
+                  value={newLobbyTitle}
+                  onChange={(e) => setNewLobbyTitle(e.target.value)}
+                  className="tactical-input"
+                  style={{ flex: 1 }}
+                />
+                <select
+                  value={newLobbyMap}
+                  onChange={(e) =>
+                    setNewLobbyMap(e.target.value as 'Erangel' | 'Miramar' | 'Sanhok' | 'Vikendi')
+                  }
+                  className="tactical-input"
+                >
+                  <option value="Erangel">Erangel</option>
+                  <option value="Miramar">Miramar</option>
+                  <option value="Sanhok">Sanhok</option>
+                  <option value="Vikendi">Vikendi</option>
+                </select>
+              </div>
+              <button type="submit" className="tactical-btn gold">
+                Launch Fresh 20-Slot Lobby
+              </button>
+            </form>
+
+            {/* Bulk Team List Auto-Populate */}
+            <form
+              onSubmit={handleBulkImport}
+              className="panel-box"
+              style={{
+                display: 'flex',
+                flexDirection: 'column',
+                gap: 10,
+                borderColor: 'rgba(6, 182, 212, 0.4)',
+              }}
+            >
+              <div
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span className="tactical-title" style={{ color: '#38bdf8', fontSize: 16 }}>
+                  2. BULK TEAM LIST AUTO-FILL
+                </span>
+                <span style={{ fontSize: 11, color: '#94a3b8' }}>
+                  One team per line or comma-separated
+                </span>
+              </div>
+              <textarea
+                rows={3}
+                placeholder={`Paste team list here (e.g., from Discord/WhatsApp):\n1. Paper REX - Bikiran\n2. Team Soul\n3. GodLike Esports`}
+                value={bulkTeamsInput}
+                onChange={(e) => setBulkTeamsInput(e.target.value)}
+                className="tactical-input"
+                style={{ resize: 'vertical', fontFamily: 'inherit' }}
+              />
+              <button type="submit" className="tactical-btn cyan">
+                Auto-Populate Open Lobby Slots
+              </button>
+            </form>
+          </div>
         )}
 
-        {/* Squad Registration Credentials Bar */}
+        {/* Manual Single-Squad Registration Bar (Kept intact alongside Bulk Import) */}
         <section
           className="panel-box"
           style={{
@@ -394,8 +507,8 @@ export default function App() {
             alignItems: 'center',
           }}
         >
-          <div className="tactical-title" style={{ fontSize: 16, minWidth: 170 }}>
-            SQUAD REGISTRATION:
+          <div className="tactical-title" style={{ fontSize: 16, minWidth: 190 }}>
+            MANUAL SQUAD CLAIM:
           </div>
           <input
             type="text"
@@ -444,10 +557,10 @@ export default function App() {
               }}
             >
               <h2 className="tactical-title" style={{ margin: 0, fontSize: 20 }}>
-                Lobby Slot Matrix (Atomic Lock)
+                Lobby Slot Matrix (20 Slots)
               </h2>
               <span style={{ fontSize: 12, color: '#94a3b8' }}>
-                Click any green slot to lock instantly
+                Click green slot for manual claim or use Admin Bulk Fill
               </span>
             </div>
 
@@ -482,7 +595,7 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right Column: Live Broadcast Leaderboard */}
+          {/* Right Column: Live Broadcast Leaderboard with Alive Tracker */}
           <div className="panel-box">
             <div
               style={{
@@ -496,7 +609,7 @@ export default function App() {
                 Live Broadcast Standings
               </h2>
               <span style={{ fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
-                {isAdmin ? 'Admin Live Scoring Enabled' : 'Auto-Sorted by Total Points'}
+                {isAdmin ? 'Admin Live Scoring & Alive Control' : 'Real-Time Match Telemetry'}
               </span>
             </div>
 
@@ -510,7 +623,7 @@ export default function App() {
                   borderRadius: 8,
                 }}
               >
-                No squads have locked a slot yet. Book a slot on the left to populate the live broadcast table.
+                No squads locked yet. Claim a slot manually or paste your team list in Admin Mode.
               </div>
             ) : (
               <table className="standings-table">
@@ -518,6 +631,7 @@ export default function App() {
                   <tr>
                     <th>Rank</th>
                     <th>Squad</th>
+                    <th>Alive</th>
                     <th>Finishes</th>
                     <th>Place Pts</th>
                     <th style={{ textAlign: 'right' }}>Total</th>
@@ -525,10 +639,16 @@ export default function App() {
                 </thead>
                 <tbody>
                   {sortedLeaderboard.map((entry, idx) => {
+                    const alive = entry.playersAlive ?? 4;
                     const rankClass =
                       idx === 0 ? 'rank-1' : idx === 1 ? 'rank-2' : idx === 2 ? 'rank-3' : '';
                     return (
-                      <tr key={entry.slotNumber} className={`standings-row ${rankClass}`}>
+                      <tr
+                        key={entry.slotNumber}
+                        className={`standings-row ${rankClass} ${
+                          alive === 0 ? 'squad-wiped' : ''
+                        }`}
+                      >
                         <td>
                           <span className="rank-pill">{idx + 1}</span>
                         </td>
@@ -536,6 +656,45 @@ export default function App() {
                           <div style={{ fontWeight: 700 }}>{entry.teamName}</div>
                           <div style={{ fontSize: 11, color: '#64748b' }}>
                             Slot #{entry.slotNumber}
+                          </div>
+                        </td>
+
+                        {/* Squad Alive Status Column (0 to 4 Players) */}
+                        <td>
+                          <div className="alive-container">
+                            {renderAliveBars(alive)}
+                            {isAdmin && (
+                              <div className="stepper-group">
+                                <button
+                                  className="stepper-btn"
+                                  title="Knock/Eliminate 1 Player"
+                                  onClick={() =>
+                                    handleScoreUpdate(
+                                      entry.slotNumber,
+                                      entry.kills,
+                                      entry.placementPoints,
+                                      alive - 1
+                                    )
+                                  }
+                                >
+                                  -
+                                </button>
+                                <button
+                                  className="stepper-btn"
+                                  title="Add/Restore 1 Player"
+                                  onClick={() =>
+                                    handleScoreUpdate(
+                                      entry.slotNumber,
+                                      entry.kills,
+                                      entry.placementPoints,
+                                      alive + 1
+                                    )
+                                  }
+                                >
+                                  +
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </td>
 
@@ -549,7 +708,8 @@ export default function App() {
                                   handleScoreUpdate(
                                     entry.slotNumber,
                                     entry.kills - 1,
-                                    entry.placementPoints
+                                    entry.placementPoints,
+                                    alive
                                   )
                                 }
                               >
@@ -564,7 +724,8 @@ export default function App() {
                                   handleScoreUpdate(
                                     entry.slotNumber,
                                     entry.kills + 1,
-                                    entry.placementPoints
+                                    entry.placementPoints,
+                                    alive
                                   )
                                 }
                               >
@@ -586,7 +747,8 @@ export default function App() {
                                   handleScoreUpdate(
                                     entry.slotNumber,
                                     entry.kills,
-                                    entry.placementPoints - 1
+                                    entry.placementPoints - 1,
+                                    alive
                                   )
                                 }
                               >
@@ -601,7 +763,8 @@ export default function App() {
                                   handleScoreUpdate(
                                     entry.slotNumber,
                                     entry.kills,
-                                    entry.placementPoints + 1
+                                    entry.placementPoints + 1,
+                                    alive
                                   )
                                 }
                               >

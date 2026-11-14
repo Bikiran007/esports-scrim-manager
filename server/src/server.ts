@@ -22,9 +22,8 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
-// 1. Create a new Scrim with 20 empty slots (Test in Postman / Thunder Client)
-// Replace the existing app.post('/api/scrims', ...) in server/src/server.ts with this:
-app.post('/api/scrims', async (req: Request, res: Response) => {
+// 1. Create a new Scrim with 20 empty slots
+app.post("/api/scrims", async (req: Request, res: Response) => {
   try {
     const { title, map, matchTime } = req.body;
 
@@ -37,20 +36,18 @@ app.post('/api/scrims', async (req: Request, res: Response) => {
     }));
 
     const scrim = await Scrim.create({
-      title: title || `${map || 'Erangel'} Official Scrim Lobby`,
-      map: map || 'Erangel',
+      title: title || `${map || "Erangel"} Official Scrim Lobby`,
+      map: map || "Erangel",
       matchTime: matchTime || new Date(),
       slots: initialSlots,
       leaderboard: [],
     });
 
-    // Broadcast the new lobby to all open browser tabs and OBS Overlays
-    io.emit('scrim_created', scrim);
-
+    io.emit("scrim_created", scrim);
     res.status(201).json(scrim);
   } catch (error) {
-    console.error('Create Scrim Error:', error);
-    res.status(500).json({ message: 'Failed to create scrim', error });
+    console.error("Create Scrim Error:", error);
+    res.status(500).json({ message: "Failed to create scrim", error });
   }
 });
 
@@ -79,13 +76,11 @@ app.get("/api/scrims/:id", async (req: Request, res: Response) => {
 io.on("connection", (socket: Socket) => {
   console.log(`Client connected: ${socket.id}`);
 
-  // Isolate users into rooms per Scrim match ID
   socket.on("join_scrim_room", (scrimId: string) => {
     socket.join(scrimId);
-    console.log(`Socket ${socket.id} joined room ${scrimId}`);
   });
 
-  // ATOMIC SLOT BOOKING (Race Condition Prevention)
+  // MANUAL SINGLE-SLOT ATOMIC BOOKING
   socket.on(
     "attempt_slot_booking",
     async (payload: {
@@ -97,10 +92,6 @@ io.on("connection", (socket: Socket) => {
       const { scrimId, slotNumber, teamName, captainIgn } = payload;
 
       try {
-        // Atomic check-and-set:
-        // 1. Matches the scrim ID
-        // 2. Ensures this team hasn't already booked a slot in this lobby
-        // 3. Ensures the specific slotNumber is still unbooked
         const updatedScrim = await Scrim.findOneAndUpdate(
           {
             _id: scrimId,
@@ -123,6 +114,7 @@ io.on("connection", (socket: Socket) => {
                 kills: 0,
                 placementPoints: 0,
                 totalPoints: 0,
+                playersAlive: 4,
               },
             },
           },
@@ -130,7 +122,6 @@ io.on("connection", (socket: Socket) => {
         );
 
         if (!updatedScrim) {
-          // Booking failed: either another team claimed it first or this team already has a slot
           socket.emit("booking_error", {
             message:
               "Slot already locked by another squad, or your team already holds a slot in this lobby.",
@@ -138,7 +129,6 @@ io.on("connection", (socket: Socket) => {
           return;
         }
 
-        // Broadcast updated scrim state to everyone viewing this match
         io.to(scrimId).emit("scrim_state_updated", updatedScrim);
       } catch (error) {
         socket.emit("booking_error", {
@@ -148,7 +138,74 @@ io.on("connection", (socket: Socket) => {
     },
   );
 
-  // LIVE LEADERBOARD SCORE PUSH (Admin Action)
+  // BULK TEAM IMPORT (Auto-populates remaining open slots)
+  socket.on(
+    "admin_bulk_import_teams",
+    async (payload: {
+      scrimId: string;
+      teams: { teamName: string; captainIgn: string }[];
+    }) => {
+      const { scrimId, teams } = payload;
+
+      try {
+        const scrim = await Scrim.findById(scrimId);
+        if (!scrim) return;
+
+        // Track existing team names (case-insensitive) to avoid duplicates
+        const existingTeams = new Set(
+          scrim.slots
+            .filter((s) => s.isBooked && s.teamName)
+            .map((s) => s.teamName!.toLowerCase()),
+        );
+
+        let teamIdx = 0;
+
+        for (const slot of scrim.slots) {
+          if (teamIdx >= teams.length) break;
+
+          if (!slot.isBooked) {
+            // Skip any team in the paste list that is already in the lobby
+            while (
+              teamIdx < teams.length &&
+              existingTeams.has(teams[teamIdx].teamName.toLowerCase())
+            ) {
+              teamIdx++;
+            }
+
+            if (teamIdx >= teams.length) break;
+
+            const currentTeam = teams[teamIdx];
+            slot.isBooked = true;
+            slot.teamName = currentTeam.teamName;
+            slot.captainIgn = currentTeam.captainIgn || "Verified Roster";
+            slot.bookedAt = new Date();
+
+            scrim.leaderboard.push({
+              slotNumber: slot.slotNumber,
+              teamName: currentTeam.teamName,
+              kills: 0,
+              placementPoints: 0,
+              totalPoints: 0,
+              playersAlive: 4,
+            });
+
+            existingTeams.add(currentTeam.teamName.toLowerCase());
+            teamIdx++;
+          }
+        }
+
+        await scrim.save();
+        io.to(scrimId).emit("scrim_state_updated", scrim);
+      } catch (error) {
+        console.error("Bulk import error:", error);
+        socket.emit("booking_error", {
+          message: "Failed to bulk import teams into slots.",
+        });
+      }
+    },
+  );
+
+  // LIVE LEADERBOARD & ALIVE STATUS UPDATE (Admin Action)
   socket.on(
     "admin_update_score",
     async (payload: {
@@ -156,9 +213,12 @@ io.on("connection", (socket: Socket) => {
       slotNumber: number;
       kills: number;
       placementPoints: number;
+      playersAlive: number;
     }) => {
-      const { scrimId, slotNumber, kills, placementPoints } = payload;
+      const { scrimId, slotNumber, kills, placementPoints, playersAlive } =
+        payload;
       const totalPoints = Number(kills) + Number(placementPoints);
+      const clampedAlive = Math.max(0, Math.min(4, Number(playersAlive)));
 
       try {
         const updatedScrim = await Scrim.findOneAndUpdate(
@@ -171,6 +231,7 @@ io.on("connection", (socket: Socket) => {
               "leaderboard.$.kills": kills,
               "leaderboard.$.placementPoints": placementPoints,
               "leaderboard.$.totalPoints": totalPoints,
+              "leaderboard.$.playersAlive": clampedAlive,
             },
           },
           { new: true },
@@ -190,7 +251,6 @@ io.on("connection", (socket: Socket) => {
   });
 });
 
-// Connect to MongoDB & Start Server
 const PORT = process.env.PORT || 5000;
 mongoose
   .connect(process.env.MONGO_URI as string)
