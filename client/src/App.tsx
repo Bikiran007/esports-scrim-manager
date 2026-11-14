@@ -1,5 +1,5 @@
 // client/src/App.tsx
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState, type FormEvent } from 'react';
 import { io, Socket } from 'socket.io-client';
 import axios from 'axios';
 import './App.css';
@@ -40,12 +40,10 @@ export default function App() {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [copiedOverlay, setCopiedOverlay] = useState(false);
 
-  // Admin New Lobby & Bulk Team Import states
   const [newLobbyTitle, setNewLobbyTitle] = useState('');
   const [newLobbyMap, setNewLobbyMap] = useState<'Erangel' | 'Miramar' | 'Sanhok' | 'Vikendi'>('Erangel');
   const [bulkTeamsInput, setBulkTeamsInput] = useState('');
 
-  // Check if URL has ?mode=overlay for OBS Studio Browser Source
   const [isOverlayMode, setIsOverlayMode] = useState(() => {
     const params = new URLSearchParams(window.location.search);
     return params.get('mode') === 'overlay';
@@ -59,7 +57,6 @@ export default function App() {
     }
   }, [isOverlayMode]);
 
-  // Fetch active scrim on mount
   useEffect(() => {
     const loadScrim = async () => {
       try {
@@ -84,7 +81,6 @@ export default function App() {
     loadScrim();
   }, []);
 
-  // Listen for real-time WebSocket broadcasts
   useEffect(() => {
     socket.on('scrim_state_updated', (updatedScrim: IScrim) => {
       setScrim(updatedScrim);
@@ -108,7 +104,6 @@ export default function App() {
     };
   }, []);
 
-  // Manual Single-Slot Booking
   const handleBookSlot = (slotNumber: number) => {
     if (!scrim) return;
     if (!teamName.trim() || !captainIgn.trim()) {
@@ -124,12 +119,10 @@ export default function App() {
     });
   };
 
-  // Bulk Team List Parser & Importer
-  const handleBulkImport = (e: React.FormEvent) => {
+  const handleBulkImport = (e: FormEvent) => {
     e.preventDefault();
     if (!scrim || !bulkTeamsInput.trim()) return;
 
-    // Split by newline or comma, clean up "1.", "Slot 2 -", etc.
     const rawLines = bulkTeamsInput
       .split(/\r?\n|,/)
       .map((line) => line.trim())
@@ -137,9 +130,7 @@ export default function App() {
 
     const parsedTeams = rawLines
       .map((line) => {
-        // Remove prefixes like "1.", "01)", "Slot 3:", "Slot #4 -"
         const cleaned = line.replace(/^(?:slot\s*#?\s*)?\d+[\.\)\:\-\s]+/i, '').trim();
-        // Check if user included captain name via "TeamName - Captain" or "TeamName | Captain"
         const parts = cleaned.split(/\s+[\-\|]\s+/);
         return {
           teamName: parts[0]?.trim() || '',
@@ -161,7 +152,6 @@ export default function App() {
     setBulkTeamsInput('');
   };
 
-  // Update Kills, Placement Points, or Players Alive (0-4)
   const handleScoreUpdate = (
     slotNumber: number,
     kills: number,
@@ -178,7 +168,7 @@ export default function App() {
     });
   };
 
-  const handleCreateNewLobby = async (e: React.FormEvent) => {
+  const handleCreateNewLobby = async (e: FormEvent) => {
     e.preventDefault();
     setErrorMsg(null);
 
@@ -209,7 +199,6 @@ export default function App() {
     setTimeout(() => setCopiedOverlay(false), 2500);
   };
 
-  // Helper to render the 4-bar visual squad status
   const renderAliveBars = (aliveCount: number = 4) => {
     if (aliveCount === 0) {
       return <span className="wiped-badge">WIPED</span>;
@@ -237,18 +226,34 @@ export default function App() {
     );
   }
 
-  // Sort standings highest to lowest by Total Points, then Finishes
-  const sortedLeaderboard = [...scrim.leaderboard].sort(
-    (a, b) => b.totalPoints - a.totalPoints || b.kills - a.kills
+  // Ensure every booked slot appears on the leaderboard even if booked before schema update
+  const mergedEntries: ILeaderboardEntry[] = scrim.slots
+    .filter((s) => s.isBooked && s.teamName)
+    .map((slot) => {
+      const existing = scrim.leaderboard.find((l) => l.slotNumber === slot.slotNumber);
+      return (
+        existing || {
+          slotNumber: slot.slotNumber,
+          teamName: slot.teamName!,
+          kills: 0,
+          placementPoints: 0,
+          totalPoints: 0,
+          playersAlive: 4,
+        }
+      );
+    });
+
+  const sortedLeaderboard = [...mergedEntries].sort(
+    (a, b) => b.totalPoints - a.totalPoints || b.kills - a.kills || a.slotNumber - b.slotNumber
   );
 
   const bookedCount = scrim.slots.filter((s) => s.isBooked).length;
-  const totalLobbyFinishes = scrim.leaderboard.reduce((acc, curr) => acc + curr.kills, 0);
-  const totalPlayersAlive = scrim.leaderboard.reduce(
+  const totalLobbyFinishes = sortedLeaderboard.reduce((acc, curr) => acc + curr.kills, 0);
+  const totalPlayersAlive = sortedLeaderboard.reduce(
     (acc, curr) => acc + (curr.playersAlive ?? 4),
     0
   );
-  const squadsAliveCount = scrim.leaderboard.filter(
+  const squadsAliveCount = sortedLeaderboard.filter(
     (curr) => (curr.playersAlive ?? 4) > 0
   ).length;
 
@@ -262,7 +267,7 @@ export default function App() {
           <button
             onClick={() => setIsOverlayMode(false)}
             className="tactical-btn"
-            style={{ marginBottom: 10, fontSize: 12, padding: '4px 10px' }}
+            style={{ marginBottom: 6, fontSize: 11, padding: '3px 8px' }}
           >
             ← Exit Overlay Preview
           </button>
@@ -270,14 +275,14 @@ export default function App() {
 
         <div className="obs-hud-header">
           <div>
-            <div style={{ fontSize: 11, color: '#f59e0b', letterSpacing: 1.5, fontWeight: 700 }}>
+            <div style={{ fontSize: 10, color: '#f59e0b', letterSpacing: 1.4, fontWeight: 700 }}>
               {scrim.map.toUpperCase()} • {squadsAliveCount} SQUADS / {totalPlayersAlive} ALIVE
             </div>
-            <div style={{ fontSize: 18, fontWeight: 800, letterSpacing: 0.8 }}>
+            <div style={{ fontSize: 15, fontWeight: 800, letterSpacing: 0.6 }}>
               {scrim.title}
             </div>
           </div>
-          <div className="live-badge">
+          <div className="live-badge" style={{ padding: '2px 8px', fontSize: 11 }}>
             <span className="live-dot" />
             LIVE
           </div>
@@ -297,7 +302,7 @@ export default function App() {
             WAITING FOR SQUADS TO LOCK SLOTS...
           </div>
         ) : (
-          sortedLeaderboard.slice(0, 20).map((entry, idx) => {
+          sortedLeaderboard.map((entry, idx) => {
             const alive = entry.playersAlive ?? 4;
             return (
               <div
@@ -338,7 +343,6 @@ export default function App() {
   return (
     <div className="esports-app">
       <div className="esports-container">
-        {/* Broadcast Header */}
         <header className="broadcast-header">
           <div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 6 }}>
@@ -382,7 +386,6 @@ export default function App() {
           </div>
         </header>
 
-        {/* Live Telemetry Strip */}
         <section className="stats-strip">
           <div className="stat-card">
             <span className="stat-label">Lobby Capacity</span>
@@ -412,10 +415,8 @@ export default function App() {
           </div>
         </section>
 
-        {/* ADMIN CONTROLS: 1. New Lobby Creator + 2. Bulk Team Importer */}
         {isAdmin && (
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 24 }}>
-            {/* Create Fresh Lobby */}
             <form
               onSubmit={handleCreateNewLobby}
               className="panel-box"
@@ -456,7 +457,6 @@ export default function App() {
               </button>
             </form>
 
-            {/* Bulk Team List Auto-Populate */}
             <form
               onSubmit={handleBulkImport}
               className="panel-box"
@@ -483,7 +483,7 @@ export default function App() {
               </div>
               <textarea
                 rows={3}
-                placeholder={`Paste team list here (e.g., from Discord/WhatsApp):\n1. Paper REX - Bikiran\n2. Team Soul\n3. GodLike Esports`}
+                placeholder={`Paste team list here:\n1. Paper REX - Bikiran\n2. Team Soul\n3. GodLike Esports`}
                 value={bulkTeamsInput}
                 onChange={(e) => setBulkTeamsInput(e.target.value)}
                 className="tactical-input"
@@ -496,7 +496,6 @@ export default function App() {
           </div>
         )}
 
-        {/* Manual Single-Squad Registration Bar (Kept intact alongside Bulk Import) */}
         <section
           className="panel-box"
           style={{
@@ -544,9 +543,7 @@ export default function App() {
           </div>
         )}
 
-        {/* Main 2-Column Tactical Grid */}
         <div className="dashboard-grid">
-          {/* Left Column: 20-Slot Atomic Grid */}
           <div className="panel-box">
             <div
               style={{
@@ -595,7 +592,6 @@ export default function App() {
             </div>
           </div>
 
-          {/* Right Column: Live Broadcast Leaderboard with Alive Tracker */}
           <div className="panel-box">
             <div
               style={{
@@ -659,7 +655,6 @@ export default function App() {
                           </div>
                         </td>
 
-                        {/* Squad Alive Status Column (0 to 4 Players) */}
                         <td>
                           <div className="alive-container">
                             {renderAliveBars(alive)}
@@ -698,7 +693,6 @@ export default function App() {
                           </div>
                         </td>
 
-                        {/* Finishes Column */}
                         <td>
                           {isAdmin ? (
                             <div className="stepper-group">
@@ -737,7 +731,6 @@ export default function App() {
                           )}
                         </td>
 
-                        {/* Placement Points Column */}
                         <td>
                           {isAdmin ? (
                             <div className="stepper-group">
@@ -776,7 +769,6 @@ export default function App() {
                           )}
                         </td>
 
-                        {/* Total Points Column */}
                         <td
                           style={{
                             textAlign: 'right',
